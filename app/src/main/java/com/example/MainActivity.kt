@@ -88,5 +88,11 @@ fun AcademicAppNavigation() {
                 onBack = { navController.popBackStack() }
             )
         }
+        composable("learning") {
+            LearningModuleScreen(
+                viewModel = academicViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
     }
 }

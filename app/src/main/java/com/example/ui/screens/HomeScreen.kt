@@ -209,6 +209,16 @@ fun HomeScreen(
                     )
 
                     AcademicToolCard(
+                        title = "الوحدات التعليمية والاختبارات التفاعلية",
+                        subtitle = "شروح مرئية، تمارين تطبيقة، واختبارات تفاعلية مستخرجة من أوراق البحث بالذكاء الاصطناعي",
+                        icon = Icons.Default.School,
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        iconTint = MaterialTheme.colorScheme.primary,
+                        onClick = { onNavigateToTool("learning") },
+                        testTag = "btn_tool_learning"
+                    )
+
+                    AcademicToolCard(
                         title = "إعداد خطة البحث والمحاور الرئيسية",
                         subtitle = "صياغة إشكالية البحث، الأسئلة، الفرضيات، والمنهجية العلمية",
                         icon = Icons.Default.AccountTree,

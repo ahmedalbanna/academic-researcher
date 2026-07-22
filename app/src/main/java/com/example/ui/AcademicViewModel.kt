@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AcademicRepository
 import com.example.data.local.*
+import com.example.data.model.QuizQuestion
 import com.example.data.remote.GeminiClient
 import com.example.util.AcademicUtils
 import com.example.util.StatisticsResult
@@ -321,5 +322,145 @@ class AcademicViewModel(application: Application) : AndroidViewModel(application
 
     fun resetReferenceSuggestionState() {
         _suggestedReferencesUiState.value = UiState.Idle
+    }
+
+    // 6. Interactive Learning & Quiz Generator State
+    private val _aiQuizUiState = MutableStateFlow<UiState<List<QuizQuestion>>>(UiState.Idle)
+    val aiQuizUiState: StateFlow<UiState<List<QuizQuestion>>> = _aiQuizUiState
+
+    private val _userQuizScores = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val userQuizScores: StateFlow<Map<String, Int>> = _userQuizScores
+
+    fun recordQuizScore(moduleId: String, scorePercentage: Int) {
+        val current = _userQuizScores.value.toMutableMap()
+        current[moduleId] = scorePercentage
+        _userQuizScores.value = current
+    }
+
+    fun generateQuizFromPaper(paperTitle: String, paperContent: String) {
+        viewModelScope.launch {
+            _aiQuizUiState.value = UiState.Loading
+
+            val prompt = """
+                أنت أستاذ تقييم أكاديمي وتفكير نقدي في الدراسات العليا. بناءً على الورقة البحثية التالية:
+                - العنوان: $paperTitle
+                - المحتوى / المستخلص:
+                $paperContent
+
+                أنشئ 3 أسئلة تفاعلية تقيس التفكير النقدي، تقييم المنهجية، والنتائج لهذه الورقة.
+                صغ الإجابة بالشكل التالي لكل سؤال:
+
+                سؤال: [نص السؤال هنا]
+                خيارات:
+                أ) [الخيار الأول]
+                ب) [الخيار الثاني]
+                ج) [الخيار الثالث]
+                د) [الخيار الرابع]
+                إجابة: [رقم الخيار الصحيح 0 أو 1 أو 2 أو 3]
+                شرح: [تفسير علمي سريع لسبب صحة الخيار]
+                ---
+            """.trimIndent()
+
+            val result = GeminiClient.generateContent(prompt)
+            result.onSuccess { rawText ->
+                val questions = parsePaperQuiz(rawText, paperTitle)
+                _aiQuizUiState.value = UiState.Success(questions)
+            }.onFailure { err ->
+                _aiQuizUiState.value = UiState.Error(err.localizedMessage ?: "حدث خطأ أثناء توليد اختبار الورقة البحثية.")
+            }
+        }
+    }
+
+    private fun parsePaperQuiz(text: String, title: String): List<QuizQuestion> {
+        val questions = mutableListOf<QuizQuestion>()
+        try {
+            val blocks = text.split("---")
+            var idCounter = 1
+            for (block in blocks) {
+                if (block.isBlank()) continue
+                val lines = block.lines().map { it.trim() }.filter { it.isNotBlank() }
+                
+                var questionText = ""
+                val options = mutableListOf<String>()
+                var correctIdx = 0
+                var explanation = "تفسير بناءً على التحليل النقدي للورقة البحثية."
+
+                for (line in lines) {
+                    when {
+                        line.startsWith("سؤال:") || line.startsWith("سؤال") -> questionText = line.substringAfter(":").trim()
+                        line.startsWith("أ)") || line.startsWith("1)") || line.startsWith("أ.") -> options.add(line.substring(2).trim())
+                        line.startsWith("ب)") || line.startsWith("2)") || line.startsWith("ب.") -> options.add(line.substring(2).trim())
+                        line.startsWith("ج)") || line.startsWith("3)") || line.startsWith("ج.") -> options.add(line.substring(2).trim())
+                        line.startsWith("د)") || line.startsWith("4)") || line.startsWith("د.") -> options.add(line.substring(2).trim())
+                        line.startsWith("إجابة:") || line.startsWith("الاجابة:") -> {
+                            val numStr = line.substringAfter(":").trim().lowercase()
+                            correctIdx = when {
+                                numStr.contains("0") || numStr.contains("أ") -> 0
+                                numStr.contains("1") || numStr.contains("ب") -> 1
+                                numStr.contains("2") || numStr.contains("ج") -> 2
+                                numStr.contains("3") || numStr.contains("د") -> 3
+                                else -> 0
+                            }
+                        }
+                        line.startsWith("شرح:") -> explanation = line.substringAfter(":").trim()
+                    }
+                }
+
+                if (questionText.isNotBlank()) {
+                    val finalOptions = if (options.size >= 4) options.take(4) else listOf(
+                        "تقييم دقيق للمتغيرات والمنهجية",
+                        "محدودية عينة الدراسة والتعميم",
+                        "الالتزام بالتحليل الإحصائي المحايد",
+                        "ربط النتائج بالتوصيات المباشرة"
+                    )
+                    questions.add(
+                        QuizQuestion(
+                            id = idCounter++,
+                            questionText = questionText,
+                            options = finalOptions,
+                            correctAnswerIndex = correctIdx,
+                            explanation = explanation
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        if (questions.isEmpty()) {
+            // Fallback default questions
+            return listOf(
+                QuizQuestion(
+                    id = 1,
+                    questionText = "ما هي المساهمة الأساسية والفجوة البحثية التي تناولتها الدراسة: ($title)؟",
+                    options = listOf(
+                        "استكشاف وتحليل متغيرات الموضوع بناءً على المستخلص المقدم",
+                        "تكرار النماذج السابقة بدون إبعاد جديدة",
+                        "عدم وجود منهجية واضحة للبحث",
+                        "الاعتماد الكامل على الفرضيات الاستطلاعية"
+                    ),
+                    correctAnswerIndex = 0,
+                    explanation = "تعبر المساهمة العلمية عن القيمة المضافة والمعرفة الجوهرية للورقة الأكاديمية."
+                ),
+                QuizQuestion(
+                    id = 2,
+                    questionText = "كيف تقيم أسلوب معالجة البيانات والنتائج الموضحة بالورقة؟",
+                    options = listOf(
+                        "تحليل موضوعي يربط الفرضيات بالأرقام أو الأدلة النوعية",
+                        "تحيز كامل للنتائج المتوقعة",
+                        "إغفال مناقشة الأدبيات المرجعية",
+                        "عدم وضوح عينة البحث"
+                    ),
+                    correctAnswerIndex = 0,
+                    explanation = "الربط المنطقي بين الأرقام أو الأدلة والتساؤلات هو معيار الرصانة والأمانة العلمية."
+                )
+            )
+        }
+        return questions
+    }
+
+    fun resetAiQuizState() {
+        _aiQuizUiState.value = UiState.Idle
     }
 }

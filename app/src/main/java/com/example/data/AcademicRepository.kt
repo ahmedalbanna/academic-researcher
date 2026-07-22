@@ -48,4 +48,28 @@ class AcademicRepository(private val academicDao: AcademicDao) {
     suspend fun deleteDataAnalysis(analysis: DataAnalysisEntity) {
         academicDao.deleteDataAnalysis(analysis)
     }
+
+    // Peer Review Papers
+    val allPeerPapers: Flow<List<PeerPaperEntity>> = academicDao.getAllPeerPapers()
+    val allPeerFeedbacks: Flow<List<PeerFeedbackEntity>> = academicDao.getAllPeerFeedbacks()
+    val allPeerResponses: Flow<List<PeerResponseEntity>> = academicDao.getAllPeerResponses()
+
+    fun getFeedbacksForPaper(paperId: Long): Flow<List<PeerFeedbackEntity>> = academicDao.getFeedbacksForPaper(paperId)
+    fun getResponsesForPaper(paperId: Long): Flow<List<PeerResponseEntity>> = academicDao.getResponsesForPaper(paperId)
+
+    suspend fun insertPeerPaper(paper: PeerPaperEntity): Long {
+        return academicDao.insertPeerPaper(paper)
+    }
+
+    suspend fun deletePeerPaper(paper: PeerPaperEntity) {
+        academicDao.deletePeerPaper(paper)
+    }
+
+    suspend fun insertPeerFeedback(feedback: PeerFeedbackEntity): Long {
+        return academicDao.insertPeerFeedback(feedback)
+    }
+
+    suspend fun insertPeerResponse(response: PeerResponseEntity): Long {
+        return academicDao.insertPeerResponse(response)
+    }
 }

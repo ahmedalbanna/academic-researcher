@@ -209,6 +209,16 @@ fun HomeScreen(
                     )
 
                     AcademicToolCard(
+                        title = "نظام المراجعة الأكاديمية التبادلية (Peer Review)",
+                        subtitle = "تقديم مسودات الأبحاث بهوية مجهولة وتبادل الملاحظات النقدية والرد عليها وفق المعايير العلمية",
+                        icon = Icons.Default.RateReview,
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        iconTint = MaterialTheme.colorScheme.secondary,
+                        onClick = { onNavigateToTool("peer_review") },
+                        testTag = "btn_tool_peer_review"
+                    )
+
+                    AcademicToolCard(
                         title = "الوحدات التعليمية والاختبارات التفاعلية",
                         subtitle = "شروح مرئية، تمارين تطبيقة، واختبارات تفاعلية مستخرجة من أوراق البحث بالذكاء الاصطناعي",
                         icon = Icons.Default.School,

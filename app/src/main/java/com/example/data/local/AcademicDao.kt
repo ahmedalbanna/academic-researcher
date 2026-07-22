@@ -45,4 +45,37 @@ interface AcademicDao {
 
     @Delete
     suspend fun deleteDataAnalysis(analysis: DataAnalysisEntity)
+
+    // Peer Papers
+    @Query("SELECT * FROM peer_papers ORDER BY createdAt DESC")
+    fun getAllPeerPapers(): Flow<List<PeerPaperEntity>>
+
+    @Query("SELECT * FROM peer_papers WHERE id = :paperId")
+    suspend fun getPeerPaperById(paperId: Long): PeerPaperEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPeerPaper(paper: PeerPaperEntity): Long
+
+    @Delete
+    suspend fun deletePeerPaper(paper: PeerPaperEntity)
+
+    // Peer Feedbacks
+    @Query("SELECT * FROM peer_feedbacks WHERE paperId = :paperId ORDER BY createdAt DESC")
+    fun getFeedbacksForPaper(paperId: Long): Flow<List<PeerFeedbackEntity>>
+
+    @Query("SELECT * FROM peer_feedbacks ORDER BY createdAt DESC")
+    fun getAllPeerFeedbacks(): Flow<List<PeerFeedbackEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPeerFeedback(feedback: PeerFeedbackEntity): Long
+
+    // Peer Responses
+    @Query("SELECT * FROM peer_responses WHERE paperId = :paperId ORDER BY createdAt ASC")
+    fun getResponsesForPaper(paperId: Long): Flow<List<PeerResponseEntity>>
+
+    @Query("SELECT * FROM peer_responses ORDER BY createdAt ASC")
+    fun getAllPeerResponses(): Flow<List<PeerResponseEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPeerResponse(response: PeerResponseEntity): Long
 }

@@ -10,9 +10,12 @@ import androidx.room.RoomDatabase
         ResearchProposalEntity::class,
         LiteratureSummaryEntity::class,
         CitationEntity::class,
-        DataAnalysisEntity::class
+        DataAnalysisEntity::class,
+        PeerPaperEntity::class,
+        PeerFeedbackEntity::class,
+        PeerResponseEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AcademicDatabase : RoomDatabase() {

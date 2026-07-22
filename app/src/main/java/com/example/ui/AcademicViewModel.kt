@@ -27,6 +27,9 @@ class AcademicViewModel(application: Application) : AndroidViewModel(application
     val allSummaries: StateFlow<List<LiteratureSummaryEntity>>
     val allCitations: StateFlow<List<CitationEntity>>
     val allDataAnalyses: StateFlow<List<DataAnalysisEntity>>
+    val allPeerPapers: StateFlow<List<PeerPaperEntity>>
+    val allPeerFeedbacks: StateFlow<List<PeerFeedbackEntity>>
+    val allPeerResponses: StateFlow<List<PeerResponseEntity>>
 
     init {
         val dao = AcademicDatabase.getDatabase(application).academicDao()
@@ -44,6 +47,23 @@ class AcademicViewModel(application: Application) : AndroidViewModel(application
         allDataAnalyses = repository.allDataAnalysis.stateIn(
             viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
         )
+        allPeerPapers = repository.allPeerPapers.stateIn(
+            viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+        )
+        allPeerFeedbacks = repository.allPeerFeedbacks.stateIn(
+            viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+        )
+        allPeerResponses = repository.allPeerResponses.stateIn(
+            viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+        )
+
+        viewModelScope.launch {
+            repository.allPeerPapers.firstOrNull()?.let { list ->
+                if (list.isEmpty()) {
+                    seedDefaultPeerData()
+                }
+            }
+        }
     }
 
     // 1. Research Proposal State
@@ -462,5 +482,206 @@ class AcademicViewModel(application: Application) : AndroidViewModel(application
 
     fun resetAiQuizState() {
         _aiQuizUiState.value = UiState.Idle
+    }
+
+    // 7. Peer Review System Methods
+    private val _aiPeerReviewUiState = MutableStateFlow<UiState<PeerFeedbackEntity>>(UiState.Idle)
+    val aiPeerReviewUiState: StateFlow<UiState<PeerFeedbackEntity>> = _aiPeerReviewUiState
+
+    fun submitPeerPaper(
+        title: String,
+        academicField: String,
+        abstractText: String,
+        fullDraftText: String,
+        authorAlias: String
+    ) {
+        viewModelScope.launch {
+            val paper = PeerPaperEntity(
+                title = title.trim(),
+                academicField = academicField.trim().ifEmpty { "دراسات عامة" },
+                abstractText = abstractText.trim(),
+                fullDraftText = fullDraftText.trim(),
+                authorAlias = authorAlias.ifEmpty { "باحث مجهول #${(1000..9999).random()}" }
+            )
+            repository.insertPeerPaper(paper)
+        }
+    }
+
+    fun submitPeerFeedback(
+        paperId: Long,
+        reviewerAlias: String,
+        clarityRating: Int,
+        methodologyRating: Int,
+        argumentationRating: Int,
+        clarityComment: String,
+        methodologyComment: String,
+        argumentationComment: String,
+        generalComment: String
+    ) {
+        viewModelScope.launch {
+            val feedback = PeerFeedbackEntity(
+                paperId = paperId,
+                reviewerAlias = reviewerAlias.ifEmpty { "مراجع مجهول #${(100..999).random()}" },
+                clarityRating = clarityRating.coerceIn(1, 5),
+                methodologyRating = methodologyRating.coerceIn(1, 5),
+                argumentationRating = argumentationRating.coerceIn(1, 5),
+                clarityComment = clarityComment.trim(),
+                methodologyComment = methodologyComment.trim(),
+                argumentationComment = argumentationComment.trim(),
+                generalComment = generalComment.trim()
+            )
+            repository.insertPeerFeedback(feedback)
+        }
+    }
+
+    fun submitPeerResponse(
+        feedbackId: Long,
+        paperId: Long,
+        responderAlias: String,
+        responseText: String
+    ) {
+        viewModelScope.launch {
+            val response = PeerResponseEntity(
+                feedbackId = feedbackId,
+                paperId = paperId,
+                responderAlias = responderAlias.ifEmpty { "مُعدّ البحث" },
+                responseText = responseText.trim()
+            )
+            repository.insertPeerResponse(response)
+        }
+    }
+
+    fun generateAiPeerReview(paperId: Long, paperTitle: String, abstractText: String, draftContent: String) {
+        viewModelScope.launch {
+            _aiPeerReviewUiState.value = UiState.Loading
+
+            val prompt = """
+                أنت محكّم أكاديمي ومراجع أقران خبير للرسائل والأبحاث العلمية.
+                قم بتقييم المسودة البحثية التالية بناءً على 3 محاور رئيسية مع تقديم تعليقات بناة وتوجيهات تطويرية:
+                - العنوان: $paperTitle
+                - المستخلص: $abstractText
+                - المسودة: $draftContent
+
+                يرجى تقديم التقييم بوضوح وفقاً للصيغة التالية بالضبط:
+                وضوح_درجة: [رقم من 1 إلى 5]
+                وضوح_تعليق: [تعليق حول السلاسة، التنسيق، واللغة الأكاديمية]
+                منهجية_درجة: [رقم من 1 إلى 5]
+                منهجية_تعليق: [تعليق حول التصميم البحثي واختيار الأدوات والعينة]
+                حجج_درجة: [رقم من 1 إلى 5]
+                حجج_تعليق: [تعليق حول التسلسل المنطقي، أدلة الإثبات والربط بالمراجع]
+                عام_تعليق: [توصية عامة ختامية تشجع الباحث وتلخص أبرز القوة والتحسينات]
+            """.trimIndent()
+
+            val result = GeminiClient.generateContent(prompt)
+            result.onSuccess { rawText ->
+                val feedback = parseAiPeerReviewText(paperId, rawText)
+                _aiPeerReviewUiState.value = UiState.Success(feedback)
+            }.onFailure { err ->
+                _aiPeerReviewUiState.value = UiState.Error(err.localizedMessage ?: "حدث خطأ أثناء إعداد التقييم الأكاديمي.")
+            }
+        }
+    }
+
+    private fun parseAiPeerReviewText(paperId: Long, text: String): PeerFeedbackEntity {
+        var clarityRating = 4
+        var methodologyRating = 4
+        var argumentationRating = 4
+        var clarityComment = "الصياغة الأكاديمية واضحة ومباشرة."
+        var methodologyComment = "المنهجية المتبعة مناسبة لتساؤلات البحث."
+        var argumentationComment = "التسلسل المنطقي للحجج مدعوم بالأدلة."
+        var generalComment = "بحث متميز يمتلك مقومات إضافة قيمة علمية حقيقية."
+
+        val lines = text.lines().map { it.trim() }
+        for (line in lines) {
+            when {
+                line.startsWith("وضوح_درجة:") -> clarityRating = line.substringAfter(":").trim().toIntOrNull()?.coerceIn(1, 5) ?: 4
+                line.startsWith("وضوح_تعليق:") -> clarityComment = line.substringAfter(":").trim()
+                line.startsWith("منهجية_درجة:") -> methodologyRating = line.substringAfter(":").trim().toIntOrNull()?.coerceIn(1, 5) ?: 4
+                line.startsWith("منهجية_تعليق:") -> methodologyComment = line.substringAfter(":").trim()
+                line.startsWith("حجج_درجة:") -> argumentationRating = line.substringAfter(":").trim().toIntOrNull()?.coerceIn(1, 5) ?: 4
+                line.startsWith("حجج_تعليق:") -> argumentationComment = line.substringAfter(":").trim()
+                line.startsWith("عام_تعليق:") -> generalComment = line.substringAfter(":").trim()
+            }
+        }
+
+        return PeerFeedbackEntity(
+            paperId = paperId,
+            reviewerAlias = "مساعد التقييم الأكاديمي الذكي (AI Peer Reviewer)",
+            clarityRating = clarityRating,
+            methodologyRating = methodologyRating,
+            argumentationRating = argumentationRating,
+            clarityComment = clarityComment,
+            methodologyComment = methodologyComment,
+            argumentationComment = argumentationComment,
+            generalComment = generalComment
+        )
+    }
+
+    fun resetAiPeerReviewState() {
+        _aiPeerReviewUiState.value = UiState.Idle
+    }
+
+    private suspend fun seedDefaultPeerData() {
+        val paper1Id = repository.insertPeerPaper(
+            PeerPaperEntity(
+                title = "فاعلية بيئات التعلم التكيفية القائمة على الذكاء الاصطناعي في تنمية التفكير التحليلي",
+                academicField = "تكنولوجيا التعليم",
+                abstractText = "تهدف الدراسة إلى تقييم أثر استخدام منصة تعلم ذكية تقوم بتحديد نمط القارئ وتوفير محتوى مخصص لطلاب الدراسات العليا. شملت العينة 45 طالباً وطالبة.",
+                fullDraftText = "1. المقدمة:\nتزايد الاهتمام بالتعليم الرقمي المخصص...\n2. المنهجية:\nتم استخدام المنهج شبه التجريبي ذو المجموعتين الضابطة والتجريبية، وطبّق اختبار التفكير التحليلي القبلي والبعدي...\n3. النتائج والمناقشة:\nأظهرت نتائج اختبار t وجود فروق ذات دلالة إحصائية عند مستوى (0.05) لصالح المجموعة التجريبية...",
+                authorAlias = "باحث مجهول #3021",
+                status = "قيد المراجعة"
+            )
+        )
+
+        val paper2Id = repository.insertPeerPaper(
+            PeerPaperEntity(
+                title = "تقييم أداء الخوارزميات المتقدمة في التنبؤ بالاتجاهات المسبقة في الأسواق المالية",
+                academicField = "العلوم المالية والبيانات",
+                abstractText = "تسعى هذه الورقة لاستكشاف نماذج الشبكات العصبية العميقة وتطبيقها على البيانات التاريخية لمؤشرات سوق الأسهم بهدف تحسين دقة التنبؤ وتقليل نسبة المخاطرة.",
+                fullDraftText = "مقدمة الدراسة وهيكلها:\nتم استعراض نماذج LSTM و Transformer وقدرتها على معالجة السلاسل الزمنية المعقدة...\nالتحليل القياسي والإحصائي:\nاستخدمنا معايير RMSE و MAE لتقييم أداء النماذج على بيانات امتدت لـ 5 سنوات...",
+                authorAlias = "باحث مجهول #7190",
+                status = "مراجعة مكتملة"
+            )
+        )
+
+        // Seed feedback for Paper 1
+        val feedback1Id = repository.insertPeerFeedback(
+            PeerFeedbackEntity(
+                paperId = paper1Id,
+                reviewerAlias = "مراجع أكاديمي #104",
+                clarityRating = 5,
+                methodologyRating = 4,
+                argumentationRating = 4,
+                clarityComment = "المقدمة والمسودة مكتوبة بلغة أكاديمية رصينة للغاية، والأفكار متتابعة بسلاسة.",
+                methodologyComment = "التصميم شبه التجريبي ممتاز، ولكن يُفضل توضيح كيفية التحقق من صدق وثبات أداة المقياس بشكل أكثر تفصيلاً.",
+                argumentationComment = "ربط النتائج بفرضيات البحث منطقي ومدعوم بأدبيات قوية.",
+                generalComment = "دراسة واعدة جداً. التعديلات المطلوبة طفيفة وتتركز في ملحق صدق الأداة."
+            )
+        )
+
+        // Seed author response for Feedback 1
+        repository.insertPeerResponse(
+            PeerResponseEntity(
+                feedbackId = feedback1Id,
+                paperId = paper1Id,
+                responderAlias = "باحث مجهول #3021 (مُعدّ البحث)",
+                responseText = "شكراً جزيلاً للمراجع الفاضل على هذا النقد البنّاء. تم إضافة جزء خاص بـ (معامل ألفا كرونباخ) والصدق الظاهري للأداة في الملحق المعدّل."
+            )
+        )
+
+        // Seed feedback for Paper 2
+        repository.insertPeerFeedback(
+            PeerFeedbackEntity(
+                paperId = paper2Id,
+                reviewerAlias = "مراجع أكاديمي #512",
+                clarityRating = 4,
+                methodologyRating = 5,
+                argumentationRating = 5,
+                clarityComment = "أسلوب الطرح ممتاز، المصطلحات الدقيقة تم شرحها في متن البحث.",
+                methodologyComment = "استخدام معايير RMSE و MAE يُعطي رصانة عالية للمقارنة الإحصائية بين النماذج.",
+                argumentationComment = "المناقشة العلمية للنتائج مقتنعة وتربط بين النظريات المالية والخوارزميات بشكل دقيق.",
+                generalComment = "بحث ذو جودة عالية جاهز للنشر بعد مراجعة التنسيق الشكلي فقط."
+            )
+        )
     }
 }

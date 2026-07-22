@@ -94,5 +94,11 @@ fun AcademicAppNavigation() {
                 onBack = { navController.popBackStack() }
             )
         }
+        composable("peer_review") {
+            PeerReviewScreen(
+                viewModel = academicViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
     }
 }

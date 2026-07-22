@@ -1,0 +1,17 @@
+package com.example.data.local
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "research_proposals")
+data class ResearchProposalEntity(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val title: String,
+    val fieldOfStudy: String,
+    val degreeLevel: String,
+    val problemStatement: String,
+    val researchQuestions: String,
+    val methodology: String,
+    val mainAxes: String,
+    val updatedAt: Long = System.currentTimeMillis()
+)

@@ -1,0 +1,6 @@
+{
+  "name": "الباحث الأكاديمي",
+  "description": "تطبيق تعليمي شامل للمرحلة الجامعية والدراسات العليا لإعداد البحوث، التلخيص العلمي، التحليل الإحصائي والالتزام بالنزاهة الأكاديمية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
